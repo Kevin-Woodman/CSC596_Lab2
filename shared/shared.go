@@ -1,7 +1,6 @@
 package shared
 
 import (
-	"fmt"
 	"math/rand"
 	"time"
 )
@@ -27,6 +26,8 @@ func (n Node) CrashTime() int {
 }
 
 func (n Node) InitializeNeighbors(id int) [2]int {
+	//neighbor1 := (id + 1) % MAX_NODES
+	//neighbor2 := (id - 1 + MAX_NODES) % MAX_NODES
 	neighbor1 := RandInt()
 	for neighbor1 == id {
 		neighbor1 = RandInt()
@@ -97,22 +98,36 @@ func NewRequests() *Requests {
 
 // Adds a new message request to the pending list
 func (req *Requests) Add(payload Request, reply *bool) error {
-	req.Pending[len(req.Pending)] = payload.Table
+	req.Pending[payload.ID] = payload.Table //combineTables(req.Pending[payload.ID], payload.Table)
 	return nil
 }
 
 // Listens to communication from neighboring nodes.
 func (req *Requests) Listen(ID int, reply *Membership) error {
-	//TODO
+	*reply = req.Pending[ID]
+	req.Pending[ID] = Membership{Members: make(map[int]Node)}
+	return nil
 }
 
-func combineTables(table1 *Membership, table2 *Membership) *Membership {
-	var newMembership = NewMembership()
-	for _, node := range table1.Members{
-		if (node.Hbcounter > table2.Members[node.ID].Hbcounter){
-			newMembership[node.ID] = 
-		}else{
-
+func combineTables(oldTable Membership, recivedTable Membership) Membership {
+	newMembership := Membership{Members: make(map[int]Node)}
+	for _, node := range oldTable.Members {
+		if _, ok := recivedTable.Members[node.ID]; ok { //If it exists in the new table
+			if node.Hbcounter > recivedTable.Members[node.ID].Hbcounter { //Old table is more up to date
+				newMembership.Members[node.ID] = node
+			} else {
+				newMembership.Members[node.ID] = recivedTable.Members[node.ID]
+			}
+		} else {
+			newMembership.Members[node.ID] = node
 		}
 	}
+	for _, node := range recivedTable.Members {
+		if _, ok := newMembership.Members[node.ID]; !ok { //If the node isn't in the table
+			newMembership.Members[node.ID] = recivedTable.Members[node.ID]
+		}
+
+	}
+
+	return newMembership
 }

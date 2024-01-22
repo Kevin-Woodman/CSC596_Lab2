@@ -1,8 +1,8 @@
 package main
 
 import (
+	"Lab2/shared"
 	"io"
-	"lab2/shared"
 	"net/http"
 	"net/rpc"
 )

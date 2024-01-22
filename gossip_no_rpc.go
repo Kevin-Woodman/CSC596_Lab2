@@ -6,8 +6,8 @@ Date: 1-12-24
 package main
 
 import (
+	"Lab2/shared"
 	"fmt"
-	"lab2/shared"
 )
 
 func main() {
