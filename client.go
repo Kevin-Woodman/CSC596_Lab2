@@ -1,7 +1,6 @@
 package main
 
 import (
-	"Lab2/shared"
 	"fmt"
 	"math/rand"
 	"net/rpc"
@@ -20,29 +19,51 @@ const (
 	Z_TIME_MIN = 10
 )
 
-var self_node shared.Node
+var self_node Node
 var startTime time.Time
 var wg = &sync.WaitGroup{}
 
+// Node struct represents a computing node.
+type Node struct {
+	ID        int
+	Hbcounter int
+	Time      float64
+	Alive     bool
+}
+
+// Membership struct represents participanting nodes
+type Membership struct {
+	Members map[int]Node
+}
+
+// Request struct represents a new message request to a client
+type Request struct {
+	ID    int
+	Table Membership
+}
+
 // Send the current membership table to a neighboring node with the provided ID
-func sendMessage(server rpc.Client, id int, membership shared.Membership) {
-	var retBool bool
-	if err := server.Call("Requests.Add", shared.Request{Table: membership, ID: id}, &retBool); err != nil {
+func sendMessage(server rpc.Client, id int, membership Membership) {
+	var ret Request
+	if err := server.Call("TEST.Add", Request{Table: membership, ID: id}, &ret); err != nil {
 		fmt.Println("Error: Requests.Add()", err)
-		fmt.Println(membership)
 	}
 }
 
 // Read incoming messages from other nodes
-func readMessages(server rpc.Client, id int, membership shared.Membership) *shared.Membership {
-	newMembership := shared.NewMembership()
-	if err := server.Call("Requests.Listen", self_node.ID, &newMembership); err != nil {
+func readMessages(server rpc.Client, id int, membership Membership) *Membership {
+	newMembership := Membership{Members: make(map[int]Node)}
+
+	/*
+		Error: Requests.Listen reading body gob: decoding into local type *map[int]shared.Node,
+		received remote type Request = struct { ID int; Table Membership = struct { Members map[int] = struct { ID int; Hbcounter int; Time float; Alive bool; }; }; }
+
+		How does this even make sense? It objectivly didn't get sent a request
+	*/
+	if err := server.Call("TEST.Listen", self_node.ID, &(newMembership.Members)); err != nil {
 		fmt.Println("Error: Requests.Listen", err)
-		fmt.Println(membership)
 	}
-
-	return combineTables(&membership, newMembership)
-
+	return combineTables(&membership, &newMembership)
 }
 
 func calcTime() float64 {
@@ -54,7 +75,7 @@ func main() {
 	Z_TIME := rand.Intn(Z_TIME_MAX-Z_TIME_MIN) + Z_TIME_MIN
 
 	// Connect to RPC server
-	server, _ := rpc.DialHTTP("tcp", "localhost:9005")
+	server, _ := rpc.DialHTTP("tcp", "localhost:4040")
 
 	args := os.Args[1:]
 
@@ -73,7 +94,7 @@ func main() {
 	// Construct self
 	startTime = time.Now()
 
-	self_node = shared.Node{
+	self_node = Node{
 		ID: id, Hbcounter: 0, Time: 0, Alive: true}
 
 	//var self_node_response shared.Node // Allocate space for a response to overwrite this
@@ -88,8 +109,8 @@ func main() {
 	neighbors := self_node.InitializeNeighbors(id)
 	fmt.Println("Neighbors:", neighbors)
 
-	membership := shared.NewMembership()
-	membership.Add(self_node, &self_node)
+	membership := &Membership{Members: make(map[int]Node)}
+	membership.Members[self_node.ID] = self_node
 
 	sendMessage(*server, neighbors[0], *membership)
 
@@ -103,7 +124,7 @@ func main() {
 	wg.Wait()
 }
 
-func runAfterX(server *rpc.Client, node *shared.Node, membership **shared.Membership, id int) {
+func runAfterX(server *rpc.Client, node *Node, membership **Membership, id int) {
 	node.Hbcounter += 1
 	node.Time = calcTime()
 	(*membership).Members[id] = *node
@@ -115,7 +136,7 @@ func runAfterX(server *rpc.Client, node *shared.Node, membership **shared.Member
 	}
 
 	//See if any members have died
-	var newMem = shared.NewMembership()
+	var newMem = &Membership{Members: make(map[int]Node)}
 	for _, m := range (*membership).Members {
 		if !m.Alive && m.Time < calcTime()-(DEAD_TIME*2) { //If m has been dead for longer then 2 times the dead rate
 			continue
@@ -123,7 +144,7 @@ func runAfterX(server *rpc.Client, node *shared.Node, membership **shared.Member
 		if m.Time < calcTime()-DEAD_TIME { //If m has died
 			m.Alive = false
 		}
-		newMem.Add(m, &m)
+		newMem.Members[m.ID] = m
 	}
 	*membership = newMem
 
@@ -132,7 +153,7 @@ func runAfterX(server *rpc.Client, node *shared.Node, membership **shared.Member
 	time.AfterFunc(time.Second*X_TIME, func() { runAfterX(server, &self_node, membership, id) })
 }
 
-func runAfterY(server *rpc.Client, neighbors [2]int, membership **shared.Membership, id int) {
+func runAfterY(server *rpc.Client, neighbors [2]int, membership **Membership, id int) {
 	for _, n := range neighbors {
 		sendMessage(*server, n, **membership)
 	}
@@ -148,8 +169,8 @@ func runAfterZ(server *rpc.Client, id int) { //end itself
 
 }
 
-func combineTables(oldTable *shared.Membership, recivedTable *shared.Membership) *shared.Membership {
-	var newMembership = shared.NewMembership()
+func combineTables(oldTable *Membership, recivedTable *Membership) *Membership {
+	var newMembership = &Membership{Members: make(map[int]Node)}
 	for _, node := range oldTable.Members {
 		if node.Hbcounter >= recivedTable.Members[node.ID].Hbcounter { //Old table is more up to date
 			newMembership.Members[node.ID] = node
@@ -170,7 +191,7 @@ func combineTables(oldTable *shared.Membership, recivedTable *shared.Membership)
 	return newMembership
 }
 
-func printMembership(m shared.Membership) {
+func printMembership(m Membership) {
 	for _, val := range m.Members {
 		status := "is Alive"
 		if !val.Alive {
@@ -179,4 +200,23 @@ func printMembership(m shared.Membership) {
 		fmt.Printf("Node %d has hb %d, time %.1f and %s\n", val.ID, val.Hbcounter, val.Time, status)
 	}
 	fmt.Println("")
+}
+
+func (n Node) InitializeNeighbors(id int) [2]int {
+	//neighbor1 := (id + 1) % MAX_NODES
+	//neighbor2 := (id - 1 + MAX_NODES) % MAX_NODES
+	neighbor1 := RandInt()
+	for neighbor1 == id {
+		neighbor1 = RandInt()
+	}
+	neighbor2 := RandInt()
+	for neighbor1 == neighbor2 || neighbor2 == id {
+		neighbor2 = RandInt()
+	}
+	return [2]int{neighbor1, neighbor2}
+}
+
+func RandInt() int {
+	rand.Seed(time.Now().UnixNano())
+	return rand.Intn(MAX_NODES-1+1) + 1
 }
