@@ -1,0 +1,8 @@
+                    CPE 569 Lab 2 Assignment | Epidemic Algorithm In GoLang | 1/25/24
+Group: Lorenzo Pedroza (lapedroz), Kevin Woodman (kwoodman)
+
+Running Instructions
+
+A. Go Routine Implementation (without RPC):
+In a command prompt/shell type:
+    $ go run gossip_no_rpc.go 
