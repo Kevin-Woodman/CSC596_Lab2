@@ -1,3 +1,8 @@
+/*
+CPE 569 Lab 2: Gossip Protocol w/o RPC
+Author: Lorenzo Pedroza with some helpers by Kevin Woodman
+Date: 1-25-24
+*/
 package shared
 
 import (

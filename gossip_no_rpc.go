@@ -1,7 +1,7 @@
 /*
 CPE 569 Lab 2: Gossip Protocol w/o RPC
-Author: Lorenzo Pedroza
-Date: 1-12-24
+Author: Lorenzo Pedroza with some helpp by Kevin Woodman
+Date: 1-25-24
 */
 package main
 
@@ -54,7 +54,6 @@ func combineTables(oldTable shared.Membership, recivedTable shared.Membership, e
 func run_node(wg *sync.WaitGroup, memb_chans map[int](chan shared.Membership), z, y, x, id int) {
 	defer wg.Done()
 	start_time := time.Now()
-	//maybe use the OS to record node 'logs'
 
 	self_node := shared.Node{
 		ID: id, Hbcounter: 0, Time: 0, Alive: true}
@@ -71,13 +70,13 @@ func run_node(wg *sync.WaitGroup, memb_chans map[int](chan shared.Membership), z
 	y_tick_send_tables := time.Tick(time.Duration(y) * time.Second)
 	x_tick_increment_hb := time.Tick(time.Duration(x) * time.Second)
 
-	//go ahead and listen to the two assigned neighbors
-	//and broadcast heartbeats
+	//go ahead and broadcast local table to two eighbors
+	//beat heart, listen for updates.
 	for {
 		select {
 		case <-z_die:
 			fmt.Println("\nNode", id, "failed 💀")
-			// don't close channels!! close(memb_chans[id]) //do this to avoid blocking?
+			// don't close channels!!
 			return //done running
 		case <-y_tick_send_tables: //
 			//transmit membership table to neighbors //fanout 2
@@ -133,14 +132,11 @@ func main() {
 	var wg sync.WaitGroup //keep going until everyone dies
 	memb_chans := make(map[int](chan shared.Membership))
 
-	//memb_chans[1] = make(chan shared.Membership, 2)
-
 	for i := 0; i < shared.MAX_NODES; i++ {
 		memb_chans[i] = make(chan shared.Membership, 2*shared.MAX_NODES)
 	}
 
 	fmt.Println(memb_chans)
-	//os.Exit(0)
 
 	var Z_TIME int
 
@@ -150,22 +146,13 @@ func main() {
 		go run_node(&wg, memb_chans, Z_TIME, shared.Y_TIME, shared.X_TIME, i)
 	}
 
-	//Basic Test 1
+	// //Basic Test 1
 	// wg.Add(1)
 	// go run_node(&wg, memb_chans, 12, shared.Y_TIME, shared.X_TIME, 0)
 	// wg.Add(1)
 	// go run_node(&wg, memb_chans, 16, shared.Y_TIME, shared.X_TIME, 1)
 	// wg.Add(1)
 	// go run_node(&wg, memb_chans, 24, shared.Y_TIME, shared.X_TIME, 2)
+
 	wg.Wait()
-	//Make a go routine to 'run' a node (runNode(X, Y, Z, channel, membership))
-
-	//go runNode(X,Y,Z)
-
-	//use wait groups to wait on all nodes to die..1f
-	//
-	//Each node spawns with a predetermined death (Z) time
-	//All
-
-	// rand.Float32() //returns range [0, 1.00). Clarify with Pantoja
 }
