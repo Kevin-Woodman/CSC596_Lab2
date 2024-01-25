@@ -1,7 +1,8 @@
+// Author: Kevin Woodman
+// sendMessage(), readMessage(), and structs provided by Dr. Pantoja
 package main
 
 import (
-	"Lab2/shared"
 	"fmt"
 	"math/rand"
 	"net/rpc"
@@ -15,39 +16,44 @@ const (
 	MAX_NODES  = 8
 	X_TIME     = 1
 	Y_TIME     = 2
-	DEAD_TIME  = 4
-	Z_TIME_MAX = 100
-	Z_TIME_MIN = 10
+	Z_TIME_MAX = 200
+	Z_TIME_MIN = 50
+	DEAD_TIME  = 6
 )
 
-var self_node shared.Node
+// Request struct represents a new message request to a client
+type Request struct {
+	ID    int
+	Table map[int]Node
+}
+
+type Node struct {
+	ID        int
+	Hbcounter int
+	Time      float64
+	Alive     bool
+}
+
+var self_node Node
 var startTime time.Time
-var wg = &sync.WaitGroup{}
 
 // Send the current membership table to a neighboring node with the provided ID
-func sendMessage(server rpc.Client, id int, membership shared.Membership) {
-	var retBool bool
-	if err := server.Call("Requests.Add", shared.Request{Table: membership, ID: id}, &retBool); err != nil {
-		fmt.Println("Error: Requests.Add()", err)
-		fmt.Println(membership)
+func sendMessage(server rpc.Client, id int, membership map[int]Node) {
+	if err := server.Call("Requests.Add", Request{ID: id, Table: membership}, nil); err != nil {
+		fmt.Println("Error:3 Requests.Add()", err)
 	}
 }
 
 // Read incoming messages from other nodes
-func readMessages(server rpc.Client, id int, membership shared.Membership) *shared.Membership {
-	newMembership := shared.NewMembership()
-	if err := server.Call("Requests.Listen", self_node.ID, &newMembership); err != nil {
-		fmt.Println("Error: Requests.Listen", err)
-		fmt.Println(membership)
+func readMessages(server rpc.Client, id int, membership map[int]Node) *map[int]Node {
+	table := make(map[int]Node)
+	if err := server.Call("Requests.Listen", id, &table); err != nil {
+		fmt.Println("Error:4 Requests.Listen()", err)
 	}
-
-	return combineTables(&membership, newMembership)
-
+	return &table
 }
 
-func calcTime() float64 {
-	return time.Now().Sub(startTime).Seconds()
-}
+var wg = &sync.WaitGroup{}
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
@@ -70,28 +76,16 @@ func main() {
 
 	fmt.Println("Node", id, "will fail after", Z_TIME, "seconds")
 
-	// Construct self
 	startTime = time.Now()
+	// Construct self
+	self_node = Node{ID: id, Hbcounter: 0, Time: 0, Alive: true}
 
-	self_node = shared.Node{
-		ID: id, Hbcounter: 0, Time: 0, Alive: true}
-
-	//var self_node_response shared.Node // Allocate space for a response to overwrite this
-
-	// Add node with input ID
-	/*if err := server.Call("Membership.Add", self_node, &self_node_response); err != nil {
-		fmt.Println("Error:2 Membership.Add()", err)
-	} else {
-		fmt.Printf("Success: Node created with id= %d\n", id)
-	}*/
-
-	neighbors := self_node.InitializeNeighbors(id)
+	neighbors := InitializeNeighbors(id)
 	fmt.Println("Neighbors:", neighbors)
 
-	membership := shared.NewMembership()
-	membership.Add(self_node, &self_node)
+	membership := make(map[int]Node)
 
-	sendMessage(*server, neighbors[0], *membership)
+	sendMessage(*server, neighbors[0], membership)
 
 	// crashTime := self_node.CrashTime()
 
@@ -103,75 +97,90 @@ func main() {
 	wg.Wait()
 }
 
-func runAfterX(server *rpc.Client, node *shared.Node, membership **shared.Membership, id int) {
-	node.Hbcounter += 1
+func runAfterX(server *rpc.Client, node *Node, membership *map[int]Node, id int) {
+	m := *membership
+	node.Hbcounter = node.Hbcounter + 1
 	node.Time = calcTime()
-	(*membership).Members[id] = *node
+	m[node.ID] = *node
+	*membership = m
 
-	//See if you have messages
-	temp := readMessages(*server, self_node.ID, **membership)
-	if temp != nil {
-		*membership = temp
-	}
+	time.AfterFunc(time.Second*X_TIME, func() { runAfterX(server, node, membership, id) })
+}
 
+func runAfterY(server *rpc.Client, neighbors [2]int, membership *map[int]Node, id int) {
 	//See if any members have died
-	var newMem = shared.NewMembership()
-	for _, m := range (*membership).Members {
-		if !m.Alive && m.Time < calcTime()-(DEAD_TIME*2) { //If m has been dead for longer then 2 times the dead rate
+	newMem := make(map[int]Node)
+	sentMem := make(map[int]Node)
+	for _, m := range *membership {
+		if !m.Alive && m.Time < calcTime()-(DEAD_TIME*3) { //If m has been dead for longer then 2 times the dead rate
 			continue
 		}
 		if m.Time < calcTime()-DEAD_TIME { //If m has died
 			m.Alive = false
+		} else {
+			m.Alive = true
+			sentMem[m.ID] = m
 		}
-		newMem.Add(m, &m)
+		newMem[m.ID] = m
 	}
+
 	*membership = newMem
-
-	printMembership(**membership)
-
-	time.AfterFunc(time.Second*X_TIME, func() { runAfterX(server, &self_node, membership, id) })
-}
-
-func runAfterY(server *rpc.Client, neighbors [2]int, membership **shared.Membership, id int) {
 	for _, n := range neighbors {
-		sendMessage(*server, n, **membership)
+		sendMessage(*server, n, sentMem)
 	}
 
+	m := *membership
+	table := readMessages(*server, id, m)
+	m = combineTables(m, *table)
+	*membership = m
+
+	printMembership(*membership)
 	time.AfterFunc(time.Second*Y_TIME, func() { runAfterY(server, neighbors, membership, id) })
 }
 
-func runAfterZ(server *rpc.Client, id int) { //end itself
-	fmt.Printf("Node %d ending\n", id)
+func runAfterZ(server *rpc.Client, id int) {
 	server.Close()
-	wg.Done()
+	fmt.Printf("NODE %d FAILED\n", id)
 	os.Exit(0)
-
 }
 
-func combineTables(oldTable *shared.Membership, recivedTable *shared.Membership) *shared.Membership {
-	var newMembership = shared.NewMembership()
-	for _, node := range oldTable.Members {
-		if node.Hbcounter >= recivedTable.Members[node.ID].Hbcounter { //Old table is more up to date
-			newMembership.Members[node.ID] = node
+func combineTables(oldTable map[int]Node, recivedTable map[int]Node) map[int]Node {
+	newMembership := make(map[int]Node)
+	for id, node := range oldTable {
+		if _, ok := recivedTable[id]; ok && node.Hbcounter < recivedTable[id].Hbcounter {
+			tempNode := recivedTable[id]
+			tempNode.Time = calcTime()
+			newMembership[id] = tempNode // New table's entry is more recent
 		} else {
-			newNode := recivedTable.Members[node.ID]
-			newNode.Time = calcTime()
-			newMembership.Members[node.ID] = newNode
+			newMembership[id] = node // Old table's entry is more recent
 		}
 	}
-	for _, node := range recivedTable.Members {
-		if _, ok := newMembership.Members[node.ID]; node.Alive && !ok { //If the node isn't in the table
-			newNode := recivedTable.Members[node.ID]
-			newNode.Time = calcTime()
-			newMembership.Members[node.ID] = newNode
-		}
 
+	for id, node := range recivedTable {
+		if _, ok := newMembership[id]; !ok {
+			tempNode := node
+			tempNode.Time = calcTime()
+			newMembership[id] = tempNode
+		}
 	}
+
 	return newMembership
 }
 
-func printMembership(m shared.Membership) {
-	for _, val := range m.Members {
+func InitializeNeighbors(id int) [2]int {
+	neighbor1 := RandInt()
+	for neighbor1 == id {
+		neighbor1 = RandInt()
+	}
+	neighbor2 := RandInt()
+	for neighbor1 == neighbor2 || neighbor2 == id {
+		neighbor2 = RandInt()
+	}
+	return [2]int{neighbor1, neighbor2}
+}
+
+func printMembership(m map[int]Node) {
+	for _, val := range m {
 		status := "is Alive"
 		if !val.Alive {
 			status = "is Dead"
@@ -179,4 +188,13 @@ func printMembership(m shared.Membership) {
 		fmt.Printf("Node %d has hb %d, time %.1f and %s\n", val.ID, val.Hbcounter, val.Time, status)
 	}
 	fmt.Println("")
+}
+
+func RandInt() int {
+	rand.Seed(time.Now().UnixNano())
+	return rand.Intn(MAX_NODES)
+}
+
+func calcTime() float64 {
+	return time.Now().Sub(startTime).Seconds()
 }

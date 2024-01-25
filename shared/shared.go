@@ -1,24 +1,12 @@
-/*
-CPE 569 Lab 2: Gossip Protocol w/o RPC
-Author: Lorenzo Pedroza with some helpers by Kevin Woodman
-Date: 1-25-24
-*/
 package shared
 
 import (
-	"fmt"
 	"math/rand"
 	"time"
 )
 
 const (
-	MAX_NODES     = 8 //8
-	X_TIME        = 1
-	Y_TIME        = 2
-	DEAD_TIME     = 4
-	CLEAN_UP_TIME = DEAD_TIME
-	Z_TIME_MAX    = 100 //100
-	Z_TIME_MIN    = 10  //10
+	MAX_NODES = 8
 )
 
 // Node struct represents a computing node.
@@ -48,12 +36,6 @@ func (n Node) InitializeNeighbors(id int) [2]int {
 	for neighbor1 == neighbor2 || neighbor2 == id {
 		neighbor2 = RandInt()
 	}
-	return [2]int{neighbor1, neighbor2}
-}
-
-func (n Node) InitializeNeighborsNotRandom(id int) [2]int {
-	neighbor1 := (id + 1) % MAX_NODES
-	neighbor2 := (id - 1 + MAX_NODES) % MAX_NODES
 	return [2]int{neighbor1, neighbor2}
 }
 
@@ -148,15 +130,4 @@ func combineTables(oldTable Membership, recivedTable Membership) Membership {
 	}
 
 	return newMembership
-}
-
-func printMembership(m Membership) {
-	for _, val := range m.Members {
-		status := "is Alive"
-		if !val.Alive {
-			status = "is Dead"
-		}
-		fmt.Printf("Node %d has hb %d, time %.1f and %s\n", val.ID, val.Hbcounter, val.Time, status)
-	}
-	fmt.Println("")
 }
