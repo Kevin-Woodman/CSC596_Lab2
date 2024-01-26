@@ -1,3 +1,4 @@
+
                     CPE 569 Lab 2 Assignment | Epidemic Algorithm In GoLang | 1/25/24
 Group: Lorenzo Pedroza (lapedroz), Kevin Woodman (kwoodman)
 
@@ -9,3 +10,10 @@ In a command prompt move into the go_routine_version directory and run it from t
     $ go run gossip_no_rpc.go 
 
 B. RPC Implementation
+
+Please run server.go and client.go in this outer folder, to run simply use: go run server.go, and go run client.go <id>. id is a number from 0-7
+
+I never figured out the errors, but for some reason as soon as I moved the readMessage() function from runAfterY to runAfterX in this new version broke.
+
+I have also provided the broken copies as proof I had work before adapting your working net-code. The code I ultimately wrote is most similar to my code in c.go and s.go.
+
