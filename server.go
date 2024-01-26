@@ -1,17 +1,22 @@
+// Author: Kevin Woodman
+// main() and structs provided by Dr. Pantoja
+
 package main
 
 import (
-	"log"
-	"net"
+	"io"
 	"net/http"
 	"net/rpc"
-	"sync"
 )
 
-type safeRequests struct {
-	mu sync.Mutex
-	pR map[int]Membership
+// Request struct represents a new message request to a client
+type Request struct {
+	ID    int
+	Table map[int]Node
 }
+
+// Requests struct represents pending message requests
+type Requests int
 
 // Node struct represents a computing node.
 type Node struct {
@@ -21,111 +26,63 @@ type Node struct {
 	Alive     bool
 }
 
-// Membership struct represents participanting nodes
-type Membership struct {
-	Members map[int]Node
-}
-
-// Request struct represents a new message request to a client
-type Request struct {
-	ID    int
-	Table Membership
-}
-
-// Requests struct represents pending message requests
-type Requests struct {
-	Pending map[int]Membership
-}
-
-var publicRequests safeRequests
-
-type TEST int
+var db map[int](map[int]Node) = make(map[int](map[int]Node))
 
 func main() {
-	publicRequests.pR = make(map[int]Membership)
 	// create a Membership list
-
-	nodes := NewMembership()
-	requests := new(TEST)
+	requests := new(Requests)
 
 	// register nodes with `rpc.DefaultServer`
-	rpc.Register(nodes)
 	rpc.Register(requests)
 
 	// register an HTTP handler for RPC communication
 	rpc.HandleHTTP()
 
-	listener, err := net.Listen("tcp", ":4040")
-	if err != nil {
-		log.Fatal("Listen error: ", err)
-	}
+	// sample test endpoint
+	http.HandleFunc("/", func(res http.ResponseWriter, req *http.Request) {
+		io.WriteString(res, "RPC SERVER LIVE!")
+	})
 
-	http.Serve(listener, nil)
-	if err != nil {
-		log.Fatal("Serve error: ", err)
-	}
-
-	/*
-		// sample test endpoint
-		http.HandleFunc("/", func(res http.ResponseWriter, req *http.Request) {
-			io.WriteString(res, "RPC SERVER LIVE!")
-		})
-
-		// listen and serve default HTTP server
-		http.ListenAndServe("localhost:9005", nil)*/
-}
-
-// Returns a new instance of a Membership (pointer).
-func NewMembership() *Membership {
-	return &Membership{
-		Members: make(map[int]Node),
-	}
-}
-
-// Returns a new instance of a Membership (pointer).
-func NewRequests() *Requests {
-	return &Requests{
-		Pending: make(map[int]Membership),
-	}
+	// listen and serve default HTTP server
+	http.ListenAndServe("localhost:9005", nil)
 }
 
 // Adds a new message request to the pending list
-func (req *TEST) Add(payload Request, reply *Request) error {
-	publicRequests.mu.Lock()
-	defer publicRequests.mu.Unlock()
-	publicRequests.pR[payload.ID] = combineTablesServer(publicRequests.pR[payload.ID], payload.Table)
+func (req *Requests) Add(payload Request, reply *bool) error {
+	_, ok := db[payload.ID]
+	if !ok {
+		db[payload.ID] = make(map[int]Node)
+	}
+	db[payload.ID] = combineTablesServer(db[payload.ID], payload.Table)
 	return nil
 }
 
 // Listens to communication from neighboring nodes.
-func (req *TEST) Listen(ID int, reply *map[int]Node) error {
-	publicRequests.mu.Lock()
-	defer publicRequests.mu.Unlock()
-	_, ok := publicRequests.pR[ID]
-	if ok {
-		*reply = publicRequests.pR[ID].Members
+func (req *Requests) Listen(ID int, reply *map[int]Node) error {
+	// get pendingRequests for ID from the membership list
+	_, ok := db[ID]
+	if !ok {
+		db[ID] = make(map[int]Node)
 	}
-	publicRequests.pR[ID] = Membership{Members: make(map[int]Node)}
+	*reply = db[ID]
+	db[ID] = make(map[int]Node)
+
 	return nil
 }
 
-func combineTablesServer(oldTable Membership, recivedTable Membership) Membership {
-	newMembership := Membership{Members: make(map[int]Node)}
-	for _, node := range oldTable.Members {
-		if _, ok := recivedTable.Members[node.ID]; ok { //If it exists in the new table
-			if node.Hbcounter > recivedTable.Members[node.ID].Hbcounter { //Old table is more up to date
-				newMembership.Members[node.ID] = node
-			} else { //New table is more up to date
-				newMembership.Members[node.ID] = recivedTable.Members[node.ID]
-			}
-		} else { //Not in the new table
-			newMembership.Members[node.ID] = node
+func combineTablesServer(oldTable map[int]Node, recivedTable map[int]Node) map[int]Node {
+	newMembership := make(map[int]Node)
+	for id, node := range oldTable {
+		if _, ok := recivedTable[id]; ok && node.Hbcounter < recivedTable[id].Hbcounter {
+			newMembership[id] = recivedTable[id] // New table's entry is more recent
+		} else {
+			newMembership[id] = node // Old table's entry is more recent
 		}
 	}
 
-	for _, node := range recivedTable.Members {
-		if _, ok := newMembership.Members[node.ID]; !ok {
-			newMembership.Members[node.ID] = recivedTable.Members[node.ID]
+	for id, node := range recivedTable {
+		if _, ok := newMembership[id]; !ok {
+			newMembership[id] = node // Old table's entry is more recent
 		}
 	}
 
