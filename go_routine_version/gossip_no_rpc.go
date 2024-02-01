@@ -50,6 +50,21 @@ func combineTables(oldTable shared.Membership, recivedTable shared.Membership, e
 	return newMembership
 }
 
+// Mark unreponsive members and clear them after being unresponsive for too long
+func update_deaths(membership shared.Membership, start_time time.Time) *shared.Membership {
+	var newMem = shared.NewMembership()
+	for _, m := range (membership).Members {
+		if !m.Alive && m.Time < elapsedTime(start_time)-(shared.DEAD_TIME+shared.CLEAN_UP_TIME) { //If m has been dead for longer then 2 times the dead rate
+			continue
+		}
+		if m.Time < elapsedTime(start_time)-shared.DEAD_TIME { //If m has died
+			m.Alive = false
+		}
+		newMem.Add(m, &m)
+	}
+	return newMem
+}
+
 // remember maps are already reference types
 func run_node(wg *sync.WaitGroup, memb_chans map[int](chan shared.Membership), z, y, x, id int) {
 	defer wg.Done()
@@ -111,17 +126,19 @@ func run_node(wg *sync.WaitGroup, memb_chans map[int](chan shared.Membership), z
 		default:
 			//fmt.Println("Node", id, "Checking for dead members")
 			//Identify dead members every Tdead and remove dead members after Tdead+Tclenaup
-			var newMem = shared.NewMembership()
-			for _, m := range (*membership).Members {
-				if !m.Alive && m.Time < elapsedTime(start_time)-(shared.DEAD_TIME+shared.CLEAN_UP_TIME) { //If m has been dead for longer then 2 times the dead rate
-					continue
-				}
-				if m.Time < elapsedTime(start_time)-shared.DEAD_TIME { //If m has died
-					m.Alive = false
-				}
-				newMem.Add(m, &m)
-			}
-			membership = newMem
+
+			membership = update_deaths(*membership, start_time)
+			// var newMem = shared.NewMembership()
+			// for _, m := range (*membership).Members {
+			// 	if !m.Alive && m.Time < elapsedTime(start_time)-(shared.DEAD_TIME+shared.CLEAN_UP_TIME) { //If m has been dead for longer then 2 times the dead rate
+			// 		continue
+			// 	}
+			// 	if m.Time < elapsedTime(start_time)-shared.DEAD_TIME { //If m has died
+			// 		m.Alive = false
+			// 	}
+			// 	newMem.Add(m, &m)
+			// }
+			// membership = newMem
 		}
 	}
 
