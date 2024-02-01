@@ -11,7 +11,10 @@ In a command prompt move into the go_routine_version directory and run it from t
 
 B. RPC Implementation
 
-Please run server.go and client.go in this outer folder, to run simply use: go run server.go, and go run client.go <id>. id is a number from 0-7
+Please run server.go and client.go in this current outer folder, to run simply use: 
+    $ go run server.go
+    Then on 8 other terminals in that director
+    $ go run client.go <id>. id is a number from 0-7
 
 I never figured out the errors, but for some reason as soon as I moved the readMessage() function from runAfterY to runAfterX in this new version broke.
 
