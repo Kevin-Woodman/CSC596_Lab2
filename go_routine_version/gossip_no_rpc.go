@@ -65,6 +65,15 @@ func update_deaths(membership shared.Membership, start_time time.Time) *shared.M
 	return newMem
 }
 
+func update_node_wrapper(membership shared.Membership, self_node *shared.Node) *shared.Membership {
+	newmembership := shared.NewMembership()
+	for _, m := range (membership).Members {
+		newmembership.Add(m, &m)
+	}
+	newmembership.Update(*self_node, self_node)
+	return newmembership
+}
+
 // remember maps are already reference types
 func run_node(wg *sync.WaitGroup, memb_chans map[int](chan shared.Membership), z, y, x, id int) {
 	defer wg.Done()
@@ -113,7 +122,20 @@ func run_node(wg *sync.WaitGroup, memb_chans map[int](chan shared.Membership), z
 			//
 			self_node.Hbcounter++
 			self_node.Time = elapsedTime(start_time)
-			membership.Update(self_node, &self_node)
+
+			//RACE: is updating it's memberlist, but then asynchornously: another thread, wants it
+			// newmembership := shared.NewMembership()
+			// for _, m := range (membership).Members {
+			// 	newmembership.Add(m, &m)
+			// }
+			// newmembership.Update(self_node, &self_node)
+
+			// membership := newmembership
+
+			membership = update_node_wrapper(*membership, &self_node)
+			//enforce the write on a COPY
+			//membership.Update(self_node, &self_node)
+
 			fmt.Println("\nNode:", id, " 💗", "local time:=", elapsedTime(start_time))
 			fmt.Println("\nNode:", id, " Membership Table")
 			printMembership(*membership)
